@@ -2,35 +2,70 @@ service: step-functions-intro
 frameworkVersion: '2'
 
 plugins:
-  - serverless-step-functions
-  - serverless-plugin-optimize
+  - serverless-step-functions # step functions support
+  - serverless-plugin-optimize # zero config dependency tree-shaking
 
 provider:
   name: aws
   runtime: nodejs12.x
   region: eu-north-1
 
+  iamRoleStatements:
+    - Effect: Allow
+      Action: dynamodb:*
+      Resource: !GetAtt PaymentsTable.Arn
+
 package:
   individually: true
 
 functions:
-  HelloWorld:
-    handler: src/functions/HelloWorld/index.handler
+  HandleCardPayment:
+    handler: src/functions/HandleCardPayment/index.handler
 
 stepFunctions:
   validate: true # enable pre-deployment definition validation (disabled by default)
   stateMachines:
-    Hello:
-      name: ${self:service}-${self:provider.stage}-hello
+    ProcessPayment:
+      name: ${self:service}-${self:provider.stage}-process-payment
       definition:
-        StartAt: WaitState
+        StartAt: DeterminePaymentChoice
         States:
-          WaitState:
-            Type: Wait
-            SecondsPath: $.waitSeconds
-            Next: HelloTask
+          DeterminePaymentChoice:
+            Type: Choice
+            Choices:
+              - Variable: $.paymentType
+                StringEquals: CARD
+                Next: HandleCardPayment
 
-          HelloTask:
+              - Variable: $.paymentType
+                StringEquals: CASH
+                Next: HandleCashPayment
+
+          HandleCardPayment:
             Type: Task
-            Resource: !GetAtt HelloWorld.Arn
+            Resource: !GetAtt HandleCardPayment.Arn
+            Next: SetPaymentStatusTask
+
+          HandleCashPayment:
+            Type: Task
+            Resource: !GetAtt HandleCashPayment.Arn
+            Next: SetPaymentStatusTask
+
+          SetPaymentStatusTask:
+            Type: Task
+            Resource: !GetAtt SetPaymentStatus.Arn
             End: true
+
+resources: 
+  Resource:
+    PaymentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-payments
+        BillingMode: PAY_PER_REQUEST # on-demand provisioning
+        AttributeDefinitions:
+          - AttributeName: paymentId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: paymentId
+            KeyType: HASH

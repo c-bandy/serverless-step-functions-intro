@@ -19,5 +19,7 @@
     "serverless-plugin-optimize": "^4.1.4-rc.1",
     "serverless-step-functions": "^2.29.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.0.0"
+  }
 }
