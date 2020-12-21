@@ -4,11 +4,19 @@ frameworkVersion: '2'
 plugins:
   - serverless-step-functions # step functions support
   - serverless-plugin-optimize # zero config dependency tree-shaking
+  - serverless-cf-vars # allow using `#{}` to use cloudformation variables
 
 provider:
   name: aws
   runtime: nodejs12.x
   region: eu-north-1
+
+  environment:
+    TABLE_NAME: !Ref PaymentsTable
+    # https://www.serverless.com/plugins/serverless-step-functions#current-gotcha
+    # Using outputs or references is basically a no-go because CloudFormation
+    # transforms `-` to `Dash` and breaks the reference.
+    STATE_MACHINE_ARN: arn:aws:states:#{AWS::Region}:#{AWS::AccountId}:stateMachine:${self:service}-${self:provider.stage}-payments
 
   iamRoleStatements:
     - Effect: Allow
@@ -21,6 +29,12 @@ package:
 functions:
   HandleCardPayment:
     handler: src/functions/HandleCardPayment/index.handler
+  HandleCashPayment:
+    handler: src/functions/HandleCashPayment/index.handler
+  HandleErrorOrder:
+    handler: src/functions/HandleErrorOrder/index.handler
+  SetPaymentStatus:
+    handler: src/functions/SetPaymentStatus/index.handler
 
 stepFunctions:
   validate: true # enable pre-deployment definition validation (disabled by default)
@@ -44,20 +58,49 @@ stepFunctions:
           HandleCardPayment:
             Type: Task
             Resource: !GetAtt HandleCardPayment.Arn
+            Retry: &payment-retry
+              # retry all payment errors, or timeout
+              - ErrorEquals: [PaymentError, States.Timeout]
+                IntervalSeconds: 5
+                MaxAttempts: 5
+                BackoffRate: 2.0
             Next: SetPaymentStatusTask
+            Catch: &payment-catch
+              # if retry fails after MaxAttempts, or no match in retry
+              - ErrorEquals: [States.ALL]
+                ResultPath: $.error # pass error as $.error
+                Next: HandleErrorTask
 
           HandleCashPayment:
             Type: Task
             Resource: !GetAtt HandleCashPayment.Arn
+            Retry: *payment-retry
+            Next: SetPaymentStatusTask
+            Catch: *payment-catch
+
+          HandleErrorTask:
+            Type: Task
+            Resource: !GetAtt HandleErrorOrder.Arn
+            Retry: &default-retry
+              # It's a best practice to do error handling on all tasks. 
+              # Sometimes AWS breaks and we want to handle that gracefully.
+              # https://docs.aws.amazon.com/step-functions/latest/dg/bp-lambda-serviceexception.html 
+              - ErrorEquals: [Lambda.ServiceException]
+                IntervalSeconds: 5
+                MaxAttempts: 5
+                BackoffRate: 2.0
             Next: SetPaymentStatusTask
 
           SetPaymentStatusTask:
             Type: Task
             Resource: !GetAtt SetPaymentStatus.Arn
+            Retry: *default-retry
             End: true
 
-resources: 
-  Resource:
+
+resources:
+  Resources:
+    # Define our DynamoDB
     PaymentsTable:
       Type: AWS::DynamoDB::Table
       Properties:

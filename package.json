@@ -15,11 +15,11 @@
   "homepage": "https://github.com/c-bandy/serverless-step-functions-intro#readme",
   "description": "",
   "devDependencies": {
+    "aws-sdk": "^2.815.0",
     "serverless": "^2.15.0",
+    "serverless-cf-vars": "^0.3.3",
     "serverless-plugin-optimize": "^4.1.4-rc.1",
     "serverless-step-functions": "^2.29.0"
   },
-  "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.0.0"
-  }
+  "dependencies": {}
 }
