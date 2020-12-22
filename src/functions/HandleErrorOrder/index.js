@@ -2,7 +2,7 @@ module.exports.handler = async function (event) {
 
   // Some code to clean up a failed payment
 
-  // Send slack event, run some lambda, notify sysops?!
+  // Send slack notification, run some lambda, notify sysops?!
   // So many options!
 
   console.error({
@@ -10,5 +10,8 @@ module.exports.handler = async function (event) {
     event,
   })
 
-  return event;
+  return {
+    ...event,
+    paymentStatus: "FAILED",
+  };
 };
